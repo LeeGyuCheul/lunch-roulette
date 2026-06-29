@@ -21,6 +21,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const stateRef = doc(db, "lunchRoulette", "sharedState");
 const LEGACY_FOOD_STORAGE_KEY = "lunch-roulette-foods";
+const LEGACY_MEMBER_STORAGE_KEY = "lunch-roulette-members";
 
 const DEFAULT_MEMBERS = [
   "이명원",
@@ -121,7 +122,13 @@ function normalizeFoods(items) {
 
 function loadLegacyFoods() {
   try {
-    return normalizeFoods(JSON.parse(localStorage.getItem(LEGACY_FOOD_STORAGE_KEY)) || []);
+    const savedFoods = JSON.parse(localStorage.getItem(LEGACY_FOOD_STORAGE_KEY)) || [];
+    const savedMembers = JSON.parse(localStorage.getItem(LEGACY_MEMBER_STORAGE_KEY)) || [];
+    const memberFoods = Array.isArray(savedMembers)
+      ? savedMembers.flatMap((member) => (Array.isArray(member?.foods) ? member.foods : []))
+      : [];
+
+    return normalizeFoods([...savedFoods, ...memberFoods]);
   } catch {
     return [];
   }
