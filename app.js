@@ -20,6 +20,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const stateRef = doc(db, "lunchRoulette", "sharedState");
+const LEGACY_FOOD_STORAGE_KEY = "lunch-roulette-foods";
 
 const DEFAULT_MEMBERS = [
   "이명원",
@@ -116,6 +117,14 @@ function normalizeFoods(items) {
   });
 
   return normalized;
+}
+
+function loadLegacyFoods() {
+  try {
+    return normalizeFoods(JSON.parse(localStorage.getItem(LEGACY_FOOD_STORAGE_KEY)) || []);
+  } catch {
+    return [];
+  }
 }
 
 function normalizeResults(value) {
@@ -537,9 +546,11 @@ resetButton.addEventListener("click", () => {
 onSnapshot(
   stateRef,
   async (snapshot) => {
+    const legacyFoods = loadLegacyFoods();
+
     if (!snapshot.exists()) {
       members = normalizeMembers(DEFAULT_MEMBERS);
-      foods = [];
+      foods = legacyFoods;
       results = { ...DEFAULT_RESULTS };
       renderAll();
       await persistState();
@@ -549,10 +560,15 @@ onSnapshot(
 
     const data = snapshot.data();
     members = restoreDefaultMembers(normalizeMembers(data.members || DEFAULT_MEMBERS));
-    foods = normalizeFoods(data.foods || []);
+    const remoteFoods = normalizeFoods(data.foods || []);
+    foods = remoteFoods.length > 0 ? remoteFoods : legacyFoods;
     results = normalizeResults(data.results || DEFAULT_RESULTS);
     hasRemoteState = true;
     renderAll();
+
+    if (remoteFoods.length === 0 && legacyFoods.length > 0) {
+      await persistState();
+    }
   },
   (error) => {
     console.error("Firestore 구독 실패", error);
