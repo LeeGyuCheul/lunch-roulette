@@ -3,6 +3,7 @@ import {
   doc,
   getFirestore,
   onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
@@ -22,6 +23,8 @@ const db = getFirestore(app);
 const stateRef = doc(db, "lunchRoulette", "sharedState");
 const LEGACY_FOOD_STORAGE_KEY = "lunch-roulette-foods";
 const LEGACY_MEMBER_STORAGE_KEY = "lunch-roulette-members";
+const CLIENT_ID_STORAGE_KEY = "lunch-roulette-client-id";
+const CONTROL_LOCK_MS = 45_000;
 
 const DEFAULT_MEMBERS = [
   "이명원",
@@ -56,6 +59,7 @@ const candidateCountEl = document.querySelector("#candidateCount");
 const foodCountEl = document.querySelector("#foodCount");
 const foodResultEl = document.querySelector("#foodResult");
 const vanResultEl = document.querySelector("#vanResult");
+const lockStatusEl = document.querySelector("#lockStatus");
 const spinButton = document.querySelector("#spinButton");
 const modeButtons = document.querySelectorAll(".mode-tab");
 const resetButton = document.querySelector("#resetButton");
@@ -71,6 +75,20 @@ let isSpinning = false;
 let wheelMode = "van";
 let activeDrag = null;
 let hasRemoteState = false;
+let controlLock = null;
+const clientId = getClientId();
+
+function getClientId() {
+  const savedId = sessionStorage.getItem(CLIENT_ID_STORAGE_KEY);
+
+  if (savedId) {
+    return savedId;
+  }
+
+  const nextId = crypto.randomUUID();
+  sessionStorage.setItem(CLIENT_ID_STORAGE_KEY, nextId);
+  return nextId;
+}
 
 function normalizeMembers(items) {
   const seen = new Set();
@@ -141,6 +159,13 @@ function normalizeResults(value) {
   };
 }
 
+function normalizeLock(value) {
+  return {
+    clientId: String(value?.clientId || ""),
+    expiresAt: Number(value?.expiresAt || 0),
+  };
+}
+
 function splitFoods(value) {
   return value
     .split(",")
@@ -162,10 +187,41 @@ function getWheelItems() {
 
 function renderAll() {
   renderModeTabs();
+  renderLockStatus();
   renderExcludedMembers();
   renderExcludedFoods();
   renderResults();
   drawWheel();
+}
+
+function isLockedByOther() {
+  return controlLock?.clientId && controlLock.clientId !== clientId && controlLock.expiresAt > Date.now();
+}
+
+function ownsLock() {
+  return controlLock?.clientId === clientId && controlLock.expiresAt > Date.now();
+}
+
+function renderLockStatus() {
+  const lockedByOther = isLockedByOther();
+  const disabled = lockedByOther || isSpinning;
+
+  lockStatusEl.textContent = lockedByOther
+    ? "다른 사용자가 조작 중입니다. 잠시 후 다시 시도하세요."
+    : ownsLock()
+      ? "현재 이 브라우저가 조작권을 가지고 있습니다."
+      : "조작 가능";
+  lockStatusEl.classList.toggle("is-locked", lockedByOther);
+
+  nameInput.disabled = disabled;
+  foodInput.disabled = disabled;
+  memberForm.querySelector("button").disabled = disabled;
+  foodForm.querySelector("button").disabled = disabled;
+  resetButton.disabled = disabled;
+  spinButton.disabled = disabled;
+  modeButtons.forEach((button) => {
+    button.disabled = disabled;
+  });
 }
 
 function renderModeTabs() {
@@ -205,15 +261,15 @@ function renderCards(items, type) {
       const index = source.indexOf(item);
 
       return `
-        <article class="member-card is-excluded" draggable="true" data-type="${type}" data-index="${index}">
+        <article class="member-card is-excluded" draggable="${!isLockedByOther()}" data-type="${type}" data-index="${index}">
           <div class="member-head">
             <div>
               <div class="member-name">${escapeHtml(item.name)}</div>
               <div class="van-badge">오늘 제외</div>
             </div>
             <div class="card-actions">
-              <button class="toggle-button" type="button" data-type="${type}" data-index="${index}">복귀</button>
-              <button class="remove-button" type="button" data-type="${type}" data-index="${index}" aria-label="${escapeHtml(item.name)} 복귀">×</button>
+              <button class="toggle-button" type="button" data-type="${type}" data-index="${index}" ${isLockedByOther() ? "disabled" : ""}>복귀</button>
+              <button class="remove-button" type="button" data-type="${type}" data-index="${index}" aria-label="${escapeHtml(item.name)} 복귀" ${isLockedByOther() ? "disabled" : ""}>×</button>
             </div>
           </div>
         </article>
@@ -284,7 +340,7 @@ function renderWheelDragHandles(items) {
       return `
         <button
           class="wheel-token"
-          draggable="true"
+          draggable="${!isLockedByOther()}"
           data-type="${wheelMode === "food" ? "food" : "member"}"
           data-index="${index}"
           type="button"
@@ -300,7 +356,11 @@ function trimLabel(label) {
   return label.length > 8 ? `${label.slice(0, 7)}...` : label;
 }
 
-function spinFood() {
+async function spinFood() {
+  if (!(await acquireControl())) {
+    return;
+  }
+
   wheelMode = "food";
   renderAll();
 
@@ -319,7 +379,11 @@ function spinFood() {
   });
 }
 
-function spinVan() {
+async function spinVan() {
+  if (!(await acquireControl())) {
+    return;
+  }
+
   wheelMode = "van";
   renderAll();
 
@@ -367,7 +431,11 @@ function spinCandidates(candidates, onDone) {
   }, 3650);
 }
 
-function moveItem(type, index, excluded) {
+async function moveItem(type, index, excluded) {
+  if (!(await acquireControl())) {
+    return;
+  }
+
   const source = type === "food" ? foods : members;
 
   if (!source[index]) {
@@ -384,8 +452,44 @@ function buildStatePayload() {
     members,
     foods,
     results,
+    lock: ownsLock() ? controlLock : null,
     updatedAt: serverTimestamp(),
   };
+}
+
+async function acquireControl() {
+  if (ownsLock()) {
+    controlLock = { clientId, expiresAt: Date.now() + CONTROL_LOCK_MS };
+    return true;
+  }
+
+  try {
+    const nextLock = { clientId, expiresAt: Date.now() + CONTROL_LOCK_MS };
+
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(stateRef);
+      const remoteLock = normalizeLock(snapshot.data()?.lock);
+
+      if (remoteLock.clientId && remoteLock.clientId !== clientId && remoteLock.expiresAt > Date.now()) {
+        throw new Error("LOCKED_BY_OTHER");
+      }
+
+      transaction.set(stateRef, { lock: nextLock, updatedAt: serverTimestamp() }, { merge: true });
+    });
+
+    controlLock = nextLock;
+    renderAll();
+    return true;
+  } catch (error) {
+    if (error.message === "LOCKED_BY_OTHER") {
+      window.alert("다른 사용자가 조작 중입니다. 잠시 후 다시 시도해주세요.");
+      return false;
+    }
+
+    console.error("조작권 획득 실패", error);
+    window.alert("조작권을 가져오지 못했습니다. 네트워크나 Firestore 설정을 확인해주세요.");
+    return false;
+  }
 }
 
 async function persistState() {
@@ -410,12 +514,23 @@ function escapeHtml(value) {
   });
 }
 
-memberForm.addEventListener("submit", (event) => {
+memberForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const name = nameInput.value.trim();
 
   if (!name) {
+    window.alert("멤버 이름을 입력해주세요.");
+    return;
+  }
+
+  if (members.some((member) => member.name === name)) {
+    window.alert("이미 등록된 멤버입니다.");
+    nameInput.focus();
+    return;
+  }
+
+  if (!(await acquireControl())) {
     return;
   }
 
@@ -426,16 +541,34 @@ memberForm.addEventListener("submit", (event) => {
   nameInput.focus();
 });
 
-foodForm.addEventListener("submit", (event) => {
+foodForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const nextFoods = splitFoods(foodInput.value);
 
   if (nextFoods.length === 0) {
+    window.alert("음식 후보를 입력해주세요.");
     return;
   }
 
-  foods = normalizeFoods([...foods, ...nextFoods.map((name) => ({ name, excluded: false }))]);
+  const existingFoodNames = new Set(foods.map((food) => food.name));
+  const uniqueFoods = nextFoods.filter((food, index) => nextFoods.indexOf(food) === index && !existingFoodNames.has(food));
+
+  if (uniqueFoods.length === 0) {
+    window.alert("이미 등록된 음식 후보입니다.");
+    foodInput.focus();
+    return;
+  }
+
+  if (uniqueFoods.length !== nextFoods.length) {
+    window.alert("중복 음식은 제외하고 추가합니다.");
+  }
+
+  if (!(await acquireControl())) {
+    return;
+  }
+
+  foods = normalizeFoods([...foods, ...uniqueFoods.map((name) => ({ name, excluded: false }))]);
   wheelMode = "food";
   renderAll();
   persistState();
@@ -454,6 +587,11 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("dragstart", (event) => {
+  if (isLockedByOther()) {
+    event.preventDefault();
+    return;
+  }
+
   const card = event.target.closest(".member-card, .wheel-token");
 
   if (!card) {
@@ -520,7 +658,7 @@ document.querySelectorAll(".drop-zone").forEach((zone) => {
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    if (isSpinning) {
+    if (isSpinning || isLockedByOther()) {
       return;
     }
 
@@ -538,7 +676,11 @@ spinButton.addEventListener("click", () => {
   spinVan();
 });
 
-resetButton.addEventListener("click", () => {
+resetButton.addEventListener("click", async () => {
+  if (!(await acquireControl())) {
+    return;
+  }
+
   members = normalizeMembers(DEFAULT_MEMBERS);
   foods = [];
   results = { ...DEFAULT_RESULTS };
@@ -568,12 +710,13 @@ onSnapshot(
     const data = snapshot.data();
     members = restoreDefaultMembers(normalizeMembers(data.members || DEFAULT_MEMBERS));
     const remoteFoods = normalizeFoods(data.foods || []);
-    foods = remoteFoods.length > 0 ? remoteFoods : legacyFoods;
+    foods = normalizeFoods([...remoteFoods, ...legacyFoods]);
     results = normalizeResults(data.results || DEFAULT_RESULTS);
+    controlLock = normalizeLock(data.lock);
     hasRemoteState = true;
     renderAll();
 
-    if (remoteFoods.length === 0 && legacyFoods.length > 0) {
+    if (foods.length !== remoteFoods.length) {
       await persistState();
     }
   },
@@ -585,3 +728,4 @@ onSnapshot(
 );
 
 renderAll();
+window.setInterval(renderLockStatus, 1000);
