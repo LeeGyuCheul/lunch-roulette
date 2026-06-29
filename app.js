@@ -229,7 +229,7 @@ function renderModeTabs() {
     button.classList.toggle("is-active", button.dataset.mode === wheelMode);
   });
 
-  spinButton.textContent = wheelMode === "food" ? "음식 룰렛 돌리기" : "벤 담당 룰렛 돌리기";
+  spinButton.textContent = "GO";
 }
 
 function renderExcludedMembers() {
