@@ -25,6 +25,7 @@ const LEGACY_FOOD_STORAGE_KEY = "lunch-roulette-foods";
 const LEGACY_MEMBER_STORAGE_KEY = "lunch-roulette-members";
 const CLIENT_ID_STORAGE_KEY = "lunch-roulette-client-id";
 const CONTROL_LOCK_MS = 45_000;
+const SPIN_DURATION_MS = 3_650;
 
 const DEFAULT_MEMBERS = [
   "이명원",
@@ -76,6 +77,8 @@ let wheelMode = "van";
 let activeDrag = null;
 let hasRemoteState = false;
 let controlLock = null;
+let activeSpin = null;
+let lastAppliedSpinId = "";
 const clientId = getClientId();
 
 function getClientId() {
@@ -166,6 +169,22 @@ function normalizeLock(value) {
   };
 }
 
+function normalizeSpin(value) {
+  if (!value?.id) {
+    return null;
+  }
+
+  return {
+    id: String(value?.id || ""),
+    mode: value?.mode === "food" ? "food" : value?.mode === "van" ? "van" : "",
+    selectedName: String(value?.selectedName || ""),
+    finalRotation: Number(value?.finalRotation || 0),
+    startedAt: Number(value?.startedAt || 0),
+    duration: Number(value?.duration || SPIN_DURATION_MS),
+    clientId: String(value?.clientId || ""),
+  };
+}
+
 function splitFoods(value) {
   return value
     .split(",")
@@ -204,10 +223,13 @@ function ownsLock() {
 
 function renderLockStatus() {
   const lockedByOther = isLockedByOther();
+  const watchingSpin = isSpinning && !ownsLock();
   const disabled = lockedByOther || isSpinning;
 
   lockStatusEl.textContent = lockedByOther
-    ? "다른 사용자가 조작 중입니다. 잠시 후 다시 시도하세요."
+    ? watchingSpin
+      ? "다른 자리에서 룰렛을 돌리는 중입니다."
+      : "다른 사용자가 조작 중입니다. 잠시 후 다시 시도하세요."
     : ownsLock()
       ? "현재 이 브라우저가 조작권을 가지고 있습니다."
       : "조작 가능";
@@ -248,6 +270,12 @@ function renderExcludedFoods() {
 function renderResults() {
   foodResultEl.textContent = results.foodText;
   vanResultEl.textContent = results.vanText;
+}
+
+function setWheelTransition(enabled, duration = SPIN_DURATION_MS) {
+  const transition = enabled ? `transform ${duration}ms cubic-bezier(0.12, 0.75, 0.14, 1)` : "none";
+  wheel.style.transition = transition;
+  wheelDragLayer.style.transition = transition;
 }
 
 function renderCards(items, type) {
@@ -369,13 +397,14 @@ async function spinFood() {
   if (candidates.length === 0) {
     results.foodText = "소울푸드에 음식 후보를 먼저 추가해주세요.";
     renderResults();
+    await releaseControl();
     return;
   }
 
-  spinCandidates(candidates, (selected) => {
+  await spinCandidates(candidates, async (selected) => {
     results.foodText = selected.name;
     results.vanText = "음식 룰렛에서 뽑혔습니다.";
-    return persistState();
+    await persistState({ spin: null });
   });
 }
 
@@ -392,16 +421,17 @@ async function spinVan() {
   if (candidates.length === 0) {
     results.vanText = "참여 멤버가 없습니다.";
     renderResults();
+    await releaseControl();
     return;
   }
 
-  spinCandidates(candidates, (selected) => {
+  await spinCandidates(candidates, async (selected) => {
     results.vanText = `오늘 벤 담당: ${selected.name}님`;
-    return persistState();
+    await persistState({ spin: null });
   });
 }
 
-function spinCandidates(candidates, onDone) {
+async function spinCandidates(candidates, onDone) {
   if (isSpinning) {
     return;
   }
@@ -417,19 +447,32 @@ function spinCandidates(candidates, onDone) {
   const targetDeg = 360 - (selectedIndex * sliceDeg + sliceDeg / 2);
   const extraTurns = 5 + Math.floor(Math.random() * 3);
   currentRotation += extraTurns * 360 + targetDeg - (currentRotation % 360);
+  activeSpin = {
+    id: crypto.randomUUID(),
+    mode: wheelMode,
+    selectedName: candidates[selectedIndex].name,
+    finalRotation: currentRotation,
+    startedAt: Date.now(),
+    duration: SPIN_DURATION_MS,
+    clientId,
+  };
+  lastAppliedSpinId = activeSpin.id;
+  await setDoc(stateRef, { spin: activeSpin, lock: controlLock, updatedAt: serverTimestamp() }, { merge: true });
+  setWheelTransition(true, SPIN_DURATION_MS);
   wheel.style.transform = `rotate(${currentRotation}deg)`;
   wheelDragLayer.style.transform = `rotate(${currentRotation}deg)`;
 
   window.setTimeout(async () => {
     await onDone(candidates[selectedIndex]);
     isSpinning = false;
+    activeSpin = null;
     await releaseControl();
     renderResults();
     spinButton.disabled = false;
     modeButtons.forEach((button) => {
       button.disabled = false;
     });
-  }, 3650);
+  }, SPIN_DURATION_MS);
 }
 
 async function moveItem(type, index, excluded) {
@@ -449,13 +492,15 @@ async function moveItem(type, index, excluded) {
   await releaseControl();
 }
 
-function buildStatePayload() {
+function buildStatePayload(extra = {}) {
   return {
     members,
     foods,
     results,
     lock: ownsLock() ? controlLock : null,
+    spin: activeSpin,
     updatedAt: serverTimestamp(),
+    ...extra,
   };
 }
 
@@ -494,9 +539,9 @@ async function acquireControl() {
   }
 }
 
-async function persistState() {
+async function persistState(extra = {}) {
   try {
-    await setDoc(stateRef, buildStatePayload(), { merge: true });
+    await setDoc(stateRef, buildStatePayload(extra), { merge: true });
   } catch (error) {
     console.error("Firestore 저장 실패", error);
     window.alert("공용 저장소에 저장하지 못했습니다. Firestore 규칙과 네트워크를 확인해주세요.");
@@ -512,10 +557,50 @@ async function releaseControl() {
   renderAll();
 
   try {
-    await setDoc(stateRef, { lock: null, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(stateRef, { lock: null, spin: activeSpin, updatedAt: serverTimestamp() }, { merge: true });
   } catch (error) {
     console.error("조작권 해제 실패", error);
   }
+}
+
+function applyRemoteSpin(spin) {
+  if (!spin?.id || spin.id === lastAppliedSpinId || spin.clientId === clientId) {
+    return;
+  }
+
+  const elapsed = Date.now() - spin.startedAt;
+
+  if (elapsed >= spin.duration + 1_000) {
+    return;
+  }
+
+  activeSpin = spin;
+  lastAppliedSpinId = spin.id;
+  wheelMode = spin.mode;
+  currentRotation = spin.finalRotation;
+  isSpinning = true;
+  renderAll();
+
+  if (elapsed > 0) {
+    setWheelTransition(false);
+    wheel.style.transform = `rotate(${spin.finalRotation - 360}deg)`;
+    wheelDragLayer.style.transform = `rotate(${spin.finalRotation - 360}deg)`;
+    wheel.offsetHeight;
+  }
+
+  setWheelTransition(true, Math.max(0, spin.duration - elapsed));
+  wheel.style.transform = `rotate(${spin.finalRotation}deg)`;
+  wheelDragLayer.style.transform = `rotate(${spin.finalRotation}deg)`;
+
+  window.setTimeout(() => {
+    if (lastAppliedSpinId !== spin.id) {
+      return;
+    }
+
+    isSpinning = false;
+    activeSpin = null;
+    renderAll();
+  }, Math.max(0, spin.duration - elapsed));
 }
 
 function escapeHtml(value) {
@@ -704,6 +789,7 @@ resetButton.addEventListener("click", async () => {
   foods = [];
   results = { ...DEFAULT_RESULTS };
   currentRotation = 0;
+  activeSpin = null;
   wheelMode = "van";
   wheel.style.transform = "rotate(0deg)";
   wheelDragLayer.style.transform = "rotate(0deg)";
@@ -733,8 +819,10 @@ onSnapshot(
     foods = normalizeFoods([...remoteFoods, ...legacyFoods]);
     results = normalizeResults(data.results || DEFAULT_RESULTS);
     controlLock = normalizeLock(data.lock);
+    activeSpin = normalizeSpin(data.spin);
     hasRemoteState = true;
     renderAll();
+    applyRemoteSpin(activeSpin);
 
     if (foods.length !== remoteFoods.length) {
       await persistState();
