@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>점심 룰렛</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="header">
+        <div>
+          <p class="eyebrow">Lunch Roulette</p>
+          <h1>오늘 점심 정하기</h1>
+        </div>
+        <button class="ghost-button" id="resetButton" type="button">초기화</button>
+      </section>
+
+      <section class="layout">
+        <section class="panel input-panel" aria-labelledby="memberTitle">
+          <div class="section-title">
+            <h2 id="memberTitle">관리</h2>
+            <span id="memberCount">0명</span>
+          </div>
+
+          <form id="memberForm" class="member-form">
+            <label>
+              멤버 이름
+              <input id="nameInput" type="text" placeholder="예: 민수" autocomplete="off" required />
+            </label>
+            <button class="primary-button" type="submit">멤버 추가</button>
+          </form>
+
+          <form id="foodForm" class="member-form food-form">
+            <label>
+              소울푸드
+              <input id="foodInput" type="text" placeholder="예: 국밥, 돈까스, 쌀국수" autocomplete="off" />
+            </label>
+            <button class="secondary-button" type="submit">음식 후보 추가</button>
+          </form>
+
+          <section class="drop-zone excluded-food-zone" data-type="food" data-excluded="true" aria-labelledby="foodListTitle">
+            <div class="list-title">
+              <h3 id="foodListTitle">제외 음식</h3>
+              <span id="foodCount">0개</span>
+            </div>
+            <div class="members" id="excludedFoods"></div>
+          </section>
+
+          <section class="drop-zone excluded-zone" data-type="member" data-excluded="true" aria-labelledby="excludedTitle">
+            <div class="list-title">
+              <h3 id="excludedTitle">제외 멤버</h3>
+              <span id="excludedCount">0명</span>
+            </div>
+            <div class="members" id="excludedMembers"></div>
+          </section>
+        </section>
+
+        <section class="panel roulette-panel" aria-labelledby="rouletteTitle">
+          <div class="section-title">
+            <h2 id="rouletteTitle">룰렛</h2>
+            <span id="candidateCount">후보 0개</span>
+          </div>
+
+          <div class="mode-tabs" role="tablist" aria-label="룰렛 선택">
+            <button class="mode-tab is-active" id="vanModeButton" type="button" data-mode="van">벤 담당</button>
+            <button class="mode-tab" id="foodModeButton" type="button" data-mode="food">음식</button>
+          </div>
+
+          <div class="wheel-wrap drop-zone wheel-drop-zone" data-excluded="false" aria-label="룰렛">
+            <div class="pointer"></div>
+            <canvas id="wheel" width="420" height="420" aria-label="룰렛"></canvas>
+            <div class="wheel-drag-layer" id="wheelDragLayer"></div>
+            <div class="wheel-center">GO</div>
+          </div>
+
+          <div class="actions">
+            <button class="primary-button" id="spinButton" type="button">선택한 룰렛 돌리기</button>
+          </div>
+
+          <section class="result-box" aria-live="polite">
+            <p class="label">오늘의 결과</p>
+            <h3 id="foodResult">아직 음식이 정해지지 않았습니다.</h3>
+            <p id="vanResult">벤 담당자도 아직 정해지지 않았습니다.</p>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
