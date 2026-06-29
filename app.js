@@ -1,4 +1,4 @@
-﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import {
   doc,
   getFirestore,
@@ -375,7 +375,7 @@ async function spinFood() {
   spinCandidates(candidates, (selected) => {
     results.foodText = selected.name;
     results.vanText = "음식 룰렛에서 뽑혔습니다.";
-    persistState();
+    return persistState();
   });
 }
 
@@ -397,7 +397,7 @@ async function spinVan() {
 
   spinCandidates(candidates, (selected) => {
     results.vanText = `오늘 벤 담당: ${selected.name}님`;
-    persistState();
+    return persistState();
   });
 }
 
@@ -420,10 +420,11 @@ function spinCandidates(candidates, onDone) {
   wheel.style.transform = `rotate(${currentRotation}deg)`;
   wheelDragLayer.style.transform = `rotate(${currentRotation}deg)`;
 
-  window.setTimeout(() => {
-    onDone(candidates[selectedIndex]);
-    renderResults();
+  window.setTimeout(async () => {
+    await onDone(candidates[selectedIndex]);
     isSpinning = false;
+    await releaseControl();
+    renderResults();
     spinButton.disabled = false;
     modeButtons.forEach((button) => {
       button.disabled = false;
@@ -444,7 +445,8 @@ async function moveItem(type, index, excluded) {
 
   source[index].excluded = excluded;
   renderAll();
-  persistState();
+  await persistState();
+  await releaseControl();
 }
 
 function buildStatePayload() {
@@ -501,6 +503,21 @@ async function persistState() {
   }
 }
 
+async function releaseControl() {
+  if (!ownsLock()) {
+    return;
+  }
+
+  controlLock = null;
+  renderAll();
+
+  try {
+    await setDoc(stateRef, { lock: null, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (error) {
+    console.error("조작권 해제 실패", error);
+  }
+}
+
 function escapeHtml(value) {
   return value.replace(/[&<>"']/g, (char) => {
     const entities = {
@@ -536,7 +553,8 @@ memberForm.addEventListener("submit", async (event) => {
 
   members = normalizeMembers([...members, { name, excluded: false }]);
   renderAll();
-  persistState();
+  await persistState();
+  await releaseControl();
   memberForm.reset();
   nameInput.focus();
 });
@@ -571,7 +589,8 @@ foodForm.addEventListener("submit", async (event) => {
   foods = normalizeFoods([...foods, ...uniqueFoods.map((name) => ({ name, excluded: false }))]);
   wheelMode = "food";
   renderAll();
-  persistState();
+  await persistState();
+  await releaseControl();
   foodForm.reset();
   foodInput.focus();
 });
@@ -689,7 +708,8 @@ resetButton.addEventListener("click", async () => {
   wheel.style.transform = "rotate(0deg)";
   wheelDragLayer.style.transform = "rotate(0deg)";
   renderAll();
-  persistState();
+  await persistState();
+  await releaseControl();
 });
 
 onSnapshot(
