@@ -413,9 +413,18 @@ canvas {
   border-radius: 50%;
   background: var(--yellow);
   color: #3d2f04;
+  cursor: pointer;
   font-size: 20px;
   font-weight: 900;
   box-shadow: 0 10px 22px rgba(23, 33, 29, 0.22);
+}
+
+.wheel-center:hover {
+  background: #ffd362;
+}
+
+.wheel-center:disabled {
+  cursor: not-allowed;
 }
 
 .wheel-drag-layer {
@@ -445,12 +454,6 @@ canvas {
 
 .wheel-token.is-dragging {
   opacity: 0.5;
-}
-
-.actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
 }
 
 .result-box {
@@ -497,10 +500,6 @@ canvas {
   .input-panel,
   .roulette-panel {
     padding: 14px;
-  }
-
-  .actions {
-    grid-template-columns: 1fr;
   }
 
   .members {
