@@ -1,4 +1,4 @@
-# Lunch Roulette
+﻿# Lunch Roulette
 
 점심 음식 후보와 벤 담당자를 룰렛으로 정하는 정적 웹앱입니다.
 
@@ -8,7 +8,7 @@
 - 음식 후보 룰렛
 - 룰렛에서 후보를 바깥으로 드래그해 제외
 - 제외된 후보를 다시 룰렛으로 복귀
-- 브라우저 `localStorage` 기반 저장
+- Firebase Firestore 기반 공용 상태 저장
 
 ## 실행
 
@@ -24,3 +24,8 @@ styles.css
 app.js
 ```
 
+## Firebase
+
+현재 앱은 Firebase Firestore의 `lunchRoulette/sharedState` 문서에 멤버, 음식, 제외 상태, 최근 결과를 저장합니다.
+
+Spark 요금제에서 사용할 수 있으며, 운영 전에 Firestore 보안 규칙을 팀 사용 방식에 맞게 제한해야 합니다.

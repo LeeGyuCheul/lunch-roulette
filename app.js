@@ -1,5 +1,26 @@
-const MEMBER_STORAGE_KEY = "lunch-roulette-members";
-const FOOD_STORAGE_KEY = "lunch-roulette-foods";
+﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import {
+  doc,
+  getFirestore,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDM3cetpAhdTsaybl6k0pgTRq9mCmd4wfE",
+  authDomain: "lunch-roulette-a3094.firebaseapp.com",
+  projectId: "lunch-roulette-a3094",
+  storageBucket: "lunch-roulette-a3094.firebasestorage.app",
+  messagingSenderId: "904405175309",
+  appId: "1:904405175309:web:8f68ade5c11a0845265944",
+  measurementId: "G-KRRGTQ6FMW",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const stateRef = doc(db, "lunchRoulette", "sharedState");
+
 const DEFAULT_MEMBERS = [
   "이명원",
   "김혜선",
@@ -13,6 +34,11 @@ const DEFAULT_MEMBERS = [
   "윤진한",
   "이주희",
 ].map((name) => ({ name, excluded: false }));
+
+const DEFAULT_RESULTS = {
+  foodText: "아직 음식이 정해지지 않았습니다.",
+  vanText: "벤 담당자도 아직 정해지지 않았습니다.",
+};
 
 const colors = ["#1f7a4d", "#f4bd43", "#d95d4f", "#4f7fd9", "#7b61d1", "#2a9d8f", "#f08a4b"];
 
@@ -35,43 +61,21 @@ const wheel = document.querySelector("#wheel");
 const wheelDragLayer = document.querySelector("#wheelDragLayer");
 const ctx = wheel.getContext("2d");
 
-let members = loadMembers();
-let foods = loadFoods();
+let members = normalizeMembers(DEFAULT_MEMBERS);
+let foods = [];
+let results = { ...DEFAULT_RESULTS };
 let currentRotation = 0;
 let isSpinning = false;
 let wheelMode = "van";
 let activeDrag = null;
-
-function loadMembers() {
-  try {
-    const savedMembers = JSON.parse(localStorage.getItem(MEMBER_STORAGE_KEY));
-    return restoreDefaultMembers(normalizeMembers(savedMembers || DEFAULT_MEMBERS));
-  } catch {
-    return normalizeMembers(DEFAULT_MEMBERS);
-  }
-}
-
-function loadFoods() {
-  try {
-    const savedFoods = JSON.parse(localStorage.getItem(FOOD_STORAGE_KEY));
-    return normalizeFoods(JSON.parse(JSON.stringify(savedFoods || [])));
-  } catch {
-    return [];
-  }
-}
-
-function restoreDefaultMembers(items) {
-  const existingNames = new Set(items.map((member) => member.name));
-  const missingDefaults = DEFAULT_MEMBERS.filter((member) => !existingNames.has(member.name));
-  return [...items, ...normalizeMembers(missingDefaults)];
-}
+let hasRemoteState = false;
 
 function normalizeMembers(items) {
   const seen = new Set();
   const normalized = [];
 
-  items.forEach((member) => {
-    const name = String(typeof member === "string" ? member : member.name || "").trim();
+  (Array.isArray(items) ? items : []).forEach((member) => {
+    const name = String(typeof member === "string" ? member : member?.name || "").trim();
 
     if (!name || seen.has(name)) {
       return;
@@ -87,30 +91,38 @@ function normalizeMembers(items) {
   return normalized;
 }
 
+function restoreDefaultMembers(items) {
+  const existingNames = new Set(items.map((member) => member.name));
+  const missingDefaults = DEFAULT_MEMBERS.filter((member) => !existingNames.has(member.name));
+  return [...items, ...normalizeMembers(missingDefaults)];
+}
+
 function normalizeFoods(items) {
   const seen = new Set();
   const normalized = [];
 
-  items.forEach((item) => {
-    const name = String(typeof item === "string" ? item : item.name || item.food || "").trim();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const name = String(typeof item === "string" ? item : item?.name || item?.food || "").trim();
 
     if (!name || seen.has(name)) {
       return;
     }
 
     seen.add(name);
-    normalized.push({ name, excluded: typeof item === "string" ? false : Boolean(item.excluded) });
+    normalized.push({
+      name,
+      excluded: typeof item === "string" ? false : Boolean(item.excluded),
+    });
   });
 
   return normalized;
 }
 
-function saveMembers() {
-  localStorage.setItem(MEMBER_STORAGE_KEY, JSON.stringify(members));
-}
-
-function saveFoods() {
-  localStorage.setItem(FOOD_STORAGE_KEY, JSON.stringify(foods));
+function normalizeResults(value) {
+  return {
+    foodText: String(value?.foodText || DEFAULT_RESULTS.foodText),
+    vanText: String(value?.vanText || DEFAULT_RESULTS.vanText),
+  };
 }
 
 function splitFoods(value) {
@@ -136,6 +148,7 @@ function renderAll() {
   renderModeTabs();
   renderExcludedMembers();
   renderExcludedFoods();
+  renderResults();
   drawWheel();
 }
 
@@ -158,6 +171,11 @@ function renderExcludedFoods() {
   const excludedFoods = foods.filter((food) => food.excluded);
   foodCountEl.textContent = `${excludedFoods.length}개`;
   excludedFoodsEl.innerHTML = renderCards(excludedFoods, "food");
+}
+
+function renderResults() {
+  foodResultEl.textContent = results.foodText;
+  vanResultEl.textContent = results.vanText;
 }
 
 function renderCards(items, type) {
@@ -268,34 +286,38 @@ function trimLabel(label) {
 
 function spinFood() {
   wheelMode = "food";
-  drawWheel();
+  renderAll();
 
   const candidates = getActiveFoods();
 
   if (candidates.length === 0) {
-    foodResultEl.textContent = "소울푸드에 음식 후보를 먼저 추가해주세요.";
+    results.foodText = "소울푸드에 음식 후보를 먼저 추가해주세요.";
+    renderResults();
     return;
   }
 
   spinCandidates(candidates, (selected) => {
-    foodResultEl.textContent = selected.name;
-    vanResultEl.textContent = "음식 룰렛에서 뽑혔습니다.";
+    results.foodText = selected.name;
+    results.vanText = "음식 룰렛에서 뽑혔습니다.";
+    persistState();
   });
 }
 
 function spinVan() {
   wheelMode = "van";
-  drawWheel();
+  renderAll();
 
   const candidates = getActiveMembers();
 
   if (candidates.length === 0) {
-    vanResultEl.textContent = "참여 멤버가 없습니다.";
+    results.vanText = "참여 멤버가 없습니다.";
+    renderResults();
     return;
   }
 
   spinCandidates(candidates, (selected) => {
-    vanResultEl.textContent = `오늘 벤 담당: ${selected.name}님`;
+    results.vanText = `오늘 벤 담당: ${selected.name}님`;
+    persistState();
   });
 }
 
@@ -320,6 +342,7 @@ function spinCandidates(candidates, onDone) {
 
   window.setTimeout(() => {
     onDone(candidates[selectedIndex]);
+    renderResults();
     isSpinning = false;
     spinButton.disabled = false;
     modeButtons.forEach((button) => {
@@ -336,8 +359,26 @@ function moveItem(type, index, excluded) {
   }
 
   source[index].excluded = excluded;
-  type === "food" ? saveFoods() : saveMembers();
   renderAll();
+  persistState();
+}
+
+function buildStatePayload() {
+  return {
+    members,
+    foods,
+    results,
+    updatedAt: serverTimestamp(),
+  };
+}
+
+async function persistState() {
+  try {
+    await setDoc(stateRef, buildStatePayload(), { merge: true });
+  } catch (error) {
+    console.error("Firestore 저장 실패", error);
+    window.alert("공용 저장소에 저장하지 못했습니다. Firestore 규칙과 네트워크를 확인해주세요.");
+  }
 }
 
 function escapeHtml(value) {
@@ -362,9 +403,9 @@ memberForm.addEventListener("submit", (event) => {
     return;
   }
 
-  members.push({ name, excluded: false });
-  saveMembers();
+  members = normalizeMembers([...members, { name, excluded: false }]);
   renderAll();
+  persistState();
   memberForm.reset();
   nameInput.focus();
 });
@@ -379,9 +420,9 @@ foodForm.addEventListener("submit", (event) => {
   }
 
   foods = normalizeFoods([...foods, ...nextFoods.map((name) => ({ name, excluded: false }))]);
-  saveFoods();
   wheelMode = "food";
   renderAll();
+  persistState();
   foodForm.reset();
   foodInput.focus();
 });
@@ -450,9 +491,8 @@ document.querySelectorAll(".drop-zone").forEach((zone) => {
     }
 
     if (zone.classList.contains("wheel-wrap")) {
-      moveItem(drag.type, drag.index, false);
       wheelMode = drag.type === "food" ? "food" : "van";
-      drawWheel();
+      moveItem(drag.type, drag.index, false);
       return;
     }
 
@@ -485,17 +525,40 @@ spinButton.addEventListener("click", () => {
 resetButton.addEventListener("click", () => {
   members = normalizeMembers(DEFAULT_MEMBERS);
   foods = [];
+  results = { ...DEFAULT_RESULTS };
   currentRotation = 0;
   wheelMode = "van";
   wheel.style.transform = "rotate(0deg)";
   wheelDragLayer.style.transform = "rotate(0deg)";
-  saveMembers();
-  saveFoods();
-  foodResultEl.textContent = "아직 음식이 정해지지 않았습니다.";
-  vanResultEl.textContent = "벤 담당자도 아직 정해지지 않았습니다.";
   renderAll();
+  persistState();
 });
 
-saveMembers();
-saveFoods();
+onSnapshot(
+  stateRef,
+  async (snapshot) => {
+    if (!snapshot.exists()) {
+      members = normalizeMembers(DEFAULT_MEMBERS);
+      foods = [];
+      results = { ...DEFAULT_RESULTS };
+      renderAll();
+      await persistState();
+      hasRemoteState = true;
+      return;
+    }
+
+    const data = snapshot.data();
+    members = restoreDefaultMembers(normalizeMembers(data.members || DEFAULT_MEMBERS));
+    foods = normalizeFoods(data.foods || []);
+    results = normalizeResults(data.results || DEFAULT_RESULTS);
+    hasRemoteState = true;
+    renderAll();
+  },
+  (error) => {
+    console.error("Firestore 구독 실패", error);
+    results.vanText = "Firestore 연결에 실패했습니다. 규칙과 네트워크를 확인해주세요.";
+    renderAll();
+  },
+);
+
 renderAll();
