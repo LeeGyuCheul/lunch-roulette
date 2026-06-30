@@ -192,6 +192,57 @@ function loadLegacyFoods() {
   }
 }
 
+function clearLegacyFoodSources() {
+  localStorage.removeItem(LEGACY_FOOD_STORAGE_KEY);
+
+  try {
+    const savedMembers = JSON.parse(localStorage.getItem(LEGACY_MEMBER_STORAGE_KEY)) || [];
+
+    if (!Array.isArray(savedMembers)) {
+      return;
+    }
+
+    const nextMembers = savedMembers.map((member) => {
+      if (!member || typeof member !== "object") {
+        return member;
+      }
+
+      return { ...member, foods: [] };
+    });
+    localStorage.setItem(LEGACY_MEMBER_STORAGE_KEY, JSON.stringify(nextMembers));
+  } catch {
+    localStorage.removeItem(LEGACY_MEMBER_STORAGE_KEY);
+  }
+}
+
+function removeLegacyFood(name) {
+  try {
+    const savedFoods = JSON.parse(localStorage.getItem(LEGACY_FOOD_STORAGE_KEY)) || [];
+    const nextFoods = Array.isArray(savedFoods)
+      ? savedFoods.filter((item) => {
+          const foodName = String(typeof item === "string" ? item : item?.name || item?.food || "").trim();
+          return foodName !== name;
+        })
+      : [];
+    localStorage.setItem(LEGACY_FOOD_STORAGE_KEY, JSON.stringify(nextFoods));
+
+    const savedMembers = JSON.parse(localStorage.getItem(LEGACY_MEMBER_STORAGE_KEY)) || [];
+
+    if (Array.isArray(savedMembers)) {
+      const nextMembers = savedMembers.map((member) => {
+        if (!member || typeof member !== "object" || !Array.isArray(member.foods)) {
+          return member;
+        }
+
+        return { ...member, foods: member.foods.filter((food) => String(food).trim() !== name) };
+      });
+      localStorage.setItem(LEGACY_MEMBER_STORAGE_KEY, JSON.stringify(nextMembers));
+    }
+  } catch {
+    clearLegacyFoodSources();
+  }
+}
+
 function normalizeResults(value) {
   return {
     foodText: String(value?.foodText || DEFAULT_RESULTS.foodText),
@@ -670,6 +721,7 @@ async function deleteFood(index) {
     return;
   }
 
+  removeLegacyFood(food.name);
   foods = foods.filter((_, foodIndex) => foodIndex !== index);
   renderAll();
   await persistState();
@@ -1042,7 +1094,7 @@ resetButton.addEventListener("click", async () => {
 onSnapshot(
   stateRef,
   async (snapshot) => {
-    const legacyFoods = loadLegacyFoods();
+    const legacyFoods = hasRemoteState ? [] : loadLegacyFoods();
 
     if (!snapshot.exists()) {
       members = normalizeMembers(DEFAULT_MEMBERS);
@@ -1051,6 +1103,7 @@ onSnapshot(
       hasRemoteState = true;
       renderAll();
       await persistState();
+      clearLegacyFoodSources();
       return;
     }
 
@@ -1068,6 +1121,7 @@ onSnapshot(
 
     if (foods.length !== remoteFoods.length) {
       await persistState();
+      clearLegacyFoodSources();
     }
   },
   (error) => {
