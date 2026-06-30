@@ -135,10 +135,30 @@ function normalizeFoods(items) {
     normalized.push({
       name,
       excluded: typeof item === "string" ? false : Boolean(item.excluded),
+      cooldownDate: typeof item === "string" ? "" : normalizeDateValue(item.cooldownDate),
     });
   });
 
   return normalized;
+}
+
+function normalizeDateValue(value) {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+function getKstDate(offsetDays = 0) {
+  const kstNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  kstNow.setDate(kstNow.getDate() + offsetDays);
+
+  const year = kstNow.getFullYear();
+  const month = String(kstNow.getMonth() + 1).padStart(2, "0");
+  const day = String(kstNow.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isFoodCoolingDown(food) {
+  return food?.cooldownDate === getKstDate();
 }
 
 function loadLegacyFoods() {
@@ -197,7 +217,7 @@ function getActiveMembers() {
 }
 
 function getActiveFoods() {
-  return foods.filter((food) => !food.excluded);
+  return foods.filter((food) => !food.excluded && !isFoodCoolingDown(food));
 }
 
 function getWheelItems() {
@@ -262,7 +282,7 @@ function renderExcludedMembers() {
 }
 
 function renderExcludedFoods() {
-  const excludedFoods = foods.filter((food) => food.excluded);
+  const excludedFoods = foods.filter((food) => food.excluded || isFoodCoolingDown(food));
   foodCountEl.textContent = `${excludedFoods.length}개`;
   excludedFoodsEl.innerHTML = renderCards(excludedFoods, "food");
 }
@@ -287,17 +307,21 @@ function renderCards(items, type) {
     .map((item) => {
       const source = type === "food" ? foods : members;
       const index = source.indexOf(item);
+      const isAutoExcludedFood = type === "food" && isFoodCoolingDown(item) && !item.excluded;
+      const disabled = isLockedByOther() || isAutoExcludedFood;
+      const badgeText = isAutoExcludedFood ? "오늘 자동 제외" : "오늘 제외";
+      const restoreLabel = isAutoExcludedFood ? "자동" : "복귀";
 
       return `
-        <article class="member-card is-excluded" draggable="${!isLockedByOther()}" data-type="${type}" data-index="${index}">
+        <article class="member-card is-excluded" draggable="${!disabled}" data-type="${type}" data-index="${index}">
           <div class="member-head">
             <div>
               <div class="member-name">${escapeHtml(item.name)}</div>
-              <div class="van-badge">오늘 제외</div>
+              <div class="van-badge">${badgeText}</div>
             </div>
             <div class="card-actions">
-              <button class="toggle-button" type="button" data-type="${type}" data-index="${index}" ${isLockedByOther() ? "disabled" : ""}>복귀</button>
-              <button class="remove-button" type="button" data-type="${type}" data-index="${index}" aria-label="${escapeHtml(item.name)} 복귀" ${isLockedByOther() ? "disabled" : ""}>×</button>
+              <button class="toggle-button" type="button" data-type="${type}" data-index="${index}" ${disabled ? "disabled" : ""}>${restoreLabel}</button>
+              <button class="remove-button" type="button" data-type="${type}" data-index="${index}" aria-label="${escapeHtml(item.name)} 복귀" ${disabled ? "disabled" : ""}>×</button>
             </div>
           </div>
         </article>
@@ -404,6 +428,7 @@ async function spinFood() {
   await spinCandidates(candidates, async (selected) => {
     results.foodText = selected.name;
     results.vanText = "음식 룰렛에서 뽑혔습니다.";
+    selected.cooldownDate = getKstDate(1);
     await persistState({ spin: null });
   });
 }
@@ -483,6 +508,12 @@ async function moveItem(type, index, excluded) {
   const source = type === "food" ? foods : members;
 
   if (!source[index]) {
+    return;
+  }
+
+  if (type === "food" && !excluded && isFoodCoolingDown(source[index])) {
+    window.alert("어제 선택된 음식이라 오늘은 자동 제외됩니다. 내일부터 다시 후보에 들어갑니다.");
+    await releaseControl();
     return;
   }
 
