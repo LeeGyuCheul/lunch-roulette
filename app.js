@@ -88,6 +88,7 @@ let currentRotation = 0;
 let isSpinning = false;
 let wheelMode = "van";
 let activeDrag = null;
+let didDragMove = false;
 let hasRemoteState = false;
 let controlLock = null;
 let activeSpin = null;
@@ -489,7 +490,7 @@ function renderCards(items, type) {
       const restoreLabel = isAutoExcludedFood ? "자동" : "복귀";
 
       return `
-        <article class="member-card is-excluded" draggable="${!disabled}" data-type="${type}" data-index="${index}">
+        <article class="member-card is-excluded" draggable="false" data-type="${type}" data-index="${index}">
           <div class="member-head">
             <div>
               <div class="member-name">${escapeHtml(item.name)}</div>
@@ -568,7 +569,7 @@ function renderWheelDragHandles(items) {
       return `
         <button
           class="wheel-token"
-          draggable="${!isLockedByOther()}"
+          draggable="false"
           data-type="${wheelMode === "food" ? "food" : "member"}"
           data-index="${index}"
           type="button"
@@ -974,6 +975,17 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const wheelToken = event.target.closest(".wheel-token");
+
+  if (wheelToken) {
+    if (isSpinning || isLockedByOther()) {
+      return;
+    }
+
+    moveItem(wheelToken.dataset.type, Number(wheelToken.dataset.index), true);
+    return;
+  }
+
   const button = event.target.closest(".remove-button, .toggle-button");
 
   if (!button) {
@@ -1000,6 +1012,7 @@ document.addEventListener("dragstart", (event) => {
     index: Number(card.dataset.index),
     fromWheel: card.classList.contains("wheel-token"),
   };
+  didDragMove = false;
   event.dataTransfer.setData("text/plain", JSON.stringify(activeDrag));
   event.dataTransfer.effectAllowed = "move";
   card.classList.add("is-dragging");
@@ -1013,17 +1026,19 @@ document.addEventListener("dragend", (event) => {
   if (activeDrag?.fromWheel) {
     const droppedInWheel = Boolean(document.elementFromPoint(event.clientX, event.clientY)?.closest(".wheel-wrap"));
 
-    if (!droppedInWheel) {
+    if (didDragMove && !droppedInWheel) {
       moveItem(activeDrag.type, activeDrag.index, true);
     }
   }
 
   activeDrag = null;
+  didDragMove = false;
 });
 
 document.querySelectorAll(".drop-zone").forEach((zone) => {
   zone.addEventListener("dragover", (event) => {
     event.preventDefault();
+    didDragMove = true;
     zone.classList.add("is-over");
   });
 

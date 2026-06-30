@@ -585,16 +585,24 @@ canvas {
   position: absolute;
   width: 86px;
   height: 34px;
-  border: 0;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
   color: transparent;
-  cursor: grab;
+  cursor: pointer;
   pointer-events: auto;
+  touch-action: manipulation;
   transform: translate(-50%, -50%);
 }
 
+.wheel-token:hover,
+.wheel-token:focus-visible {
+  background: rgba(255, 255, 255, 0.34);
+  outline: 2px solid rgba(255, 255, 255, 0.72);
+}
+
 .wheel-token:active {
-  cursor: grabbing;
+  background: rgba(255, 255, 255, 0.44);
 }
 
 .wheel-token.is-dragging {
