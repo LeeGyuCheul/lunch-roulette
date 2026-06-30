@@ -25,6 +25,7 @@ const LEGACY_FOOD_STORAGE_KEY = "lunch-roulette-foods";
 const LEGACY_MEMBER_STORAGE_KEY = "lunch-roulette-members";
 const CLIENT_ID_STORAGE_KEY = "lunch-roulette-client-id";
 const CURRENT_USER_STORAGE_KEY = "lunch-roulette-current-user";
+const ADMIN_TOKEN_STORAGE_KEY = "lunch-roulette-admin-token";
 const CONTROL_LOCK_MS = 45_000;
 const SPIN_DURATION_MS = 3_650;
 const MAX_FOODS_PER_WINNER = 3;
@@ -57,6 +58,7 @@ const nameInput = document.querySelector("#nameInput");
 const foodInput = document.querySelector("#foodInput");
 const userNameSelect = document.querySelector("#userNameSelect");
 const adminStatusEl = document.querySelector("#adminStatus");
+const adminEnrollButton = document.querySelector("#adminEnrollButton");
 const excludedMembersEl = document.querySelector("#excludedMembers");
 const excludedFoodsEl = document.querySelector("#excludedFoods");
 const foodAdminListEl = document.querySelector("#foodAdminList");
@@ -92,6 +94,8 @@ let activeSpin = null;
 let lastAppliedSpinId = "";
 let currentUserName = localStorage.getItem(CURRENT_USER_STORAGE_KEY) || "";
 let winnerPopTimer = null;
+let adminState = null;
+let localAdminTokenHash = "";
 const clientId = getClientId();
 
 function getClientId() {
@@ -218,6 +222,27 @@ function normalizeSpin(value) {
   };
 }
 
+function normalizeAdmin(value) {
+  return {
+    name: String(value?.name || ""),
+    tokenHash: String(value?.tokenHash || ""),
+  };
+}
+
+async function hashText(value) {
+  const data = new TextEncoder().encode(value);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function refreshLocalAdminTokenHash() {
+  const token = localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || "";
+  localAdminTokenHash = token ? await hashText(token) : "";
+  renderAll();
+}
+
 function splitFoods(value) {
   return value
     .split(",")
@@ -257,7 +282,12 @@ function ownsLock() {
 }
 
 function isAdmin() {
-  return currentUserName === ADMIN_NAME;
+  return Boolean(
+    currentUserName === ADMIN_NAME &&
+      adminState?.name === ADMIN_NAME &&
+      adminState?.tokenHash &&
+      localAdminTokenHash === adminState.tokenHash,
+  );
 }
 
 function renderUserControls() {
@@ -270,8 +300,20 @@ function renderUserControls() {
   }
 
   userNameSelect.value = members.some((member) => member.name === currentUserName) ? currentUserName : "";
-  adminStatusEl.textContent = isAdmin() ? "관리자 권한 활성화" : "관리자 권한 없음";
+
+  const adminRegistered = Boolean(adminState?.tokenHash);
+  const canEnrollAdmin = currentUserName === ADMIN_NAME && hasRemoteState && !adminRegistered;
+
+  adminStatusEl.textContent = isAdmin()
+    ? "이 브라우저는 관리자 기기입니다."
+    : !hasRemoteState
+      ? "관리자 권한 확인 중"
+      : adminRegistered
+      ? "관리자 권한 없음"
+      : "관리자 기기 미등록";
   adminStatusEl.classList.toggle("is-admin", isAdmin());
+  adminEnrollButton.classList.toggle("is-hidden", !canEnrollAdmin);
+  adminEnrollButton.disabled = isLockedByOther() || isSpinning;
   foodAdminZoneEl.classList.toggle("is-hidden", !isAdmin());
 }
 
@@ -634,16 +676,51 @@ async function deleteFood(index) {
   await releaseControl();
 }
 
+async function enrollAdminDevice() {
+  if (currentUserName !== ADMIN_NAME) {
+    window.alert("이규철만 관리자 기기를 등록할 수 있습니다.");
+    return;
+  }
+
+  if (adminState?.tokenHash) {
+    window.alert("관리자 기기는 이미 등록되어 있습니다.");
+    return;
+  }
+
+  if (!window.confirm("이 브라우저를 관리자 기기로 등록할까요? 등록 후 이 브라우저에서만 음식 삭제가 보입니다.")) {
+    return;
+  }
+
+  if (!(await acquireControl())) {
+    return;
+  }
+
+  const token = crypto.randomUUID();
+  const tokenHash = await hashText(token);
+  localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+  localAdminTokenHash = tokenHash;
+  adminState = { name: ADMIN_NAME, tokenHash };
+
+  await persistState();
+  await releaseControl();
+  renderAll();
+}
+
 function buildStatePayload(extra = {}) {
-  return {
+  const payload = {
     members,
     foods,
     results,
     lock: ownsLock() ? controlLock : null,
     spin: activeSpin,
     updatedAt: serverTimestamp(),
-    ...extra,
   };
+
+  if (adminState?.name || adminState?.tokenHash) {
+    payload.admin = adminState;
+  }
+
+  return { ...payload, ...extra };
 }
 
 async function acquireControl() {
@@ -835,6 +912,8 @@ userNameSelect.addEventListener("change", () => {
   renderAll();
 });
 
+adminEnrollButton.addEventListener("click", enrollAdminDevice);
+
 document.addEventListener("click", (event) => {
   const deleteFoodButton = event.target.closest(".delete-food-button");
 
@@ -969,9 +1048,9 @@ onSnapshot(
       members = normalizeMembers(DEFAULT_MEMBERS);
       foods = legacyFoods;
       results = { ...DEFAULT_RESULTS };
+      hasRemoteState = true;
       renderAll();
       await persistState();
-      hasRemoteState = true;
       return;
     }
 
@@ -980,6 +1059,7 @@ onSnapshot(
     const remoteFoods = normalizeFoods(data.foods || []);
     foods = normalizeFoods([...remoteFoods, ...legacyFoods]);
     results = normalizeResults(data.results || DEFAULT_RESULTS);
+    adminState = normalizeAdmin(data.admin);
     controlLock = normalizeLock(data.lock);
     activeSpin = normalizeSpin(data.spin);
     hasRemoteState = true;
@@ -998,4 +1078,5 @@ onSnapshot(
 );
 
 renderAll();
+refreshLocalAdminTokenHash();
 window.setInterval(renderLockStatus, 1000);

@@ -168,6 +168,16 @@ h1 {
   color: var(--green);
 }
 
+.admin-enroll-button {
+  min-height: 36px;
+  border-radius: 8px;
+  background: #17211d;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 0 12px;
+}
+
 .is-hidden {
   display: none !important;
 }
