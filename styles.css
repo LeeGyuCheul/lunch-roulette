@@ -148,6 +148,24 @@ h1 {
   color: #9b2f24;
 }
 
+.rule-box {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d8e6de;
+  border-radius: 8px;
+  background: #f7fbf8;
+  color: #34413b;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+.rule-box strong {
+  color: var(--green);
+  font-size: 14px;
+}
+
 label {
   display: grid;
   gap: 7px;

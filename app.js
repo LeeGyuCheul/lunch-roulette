@@ -26,6 +26,7 @@ const LEGACY_MEMBER_STORAGE_KEY = "lunch-roulette-members";
 const CLIENT_ID_STORAGE_KEY = "lunch-roulette-client-id";
 const CONTROL_LOCK_MS = 45_000;
 const SPIN_DURATION_MS = 3_650;
+const MAX_FOODS_PER_WINNER = 3;
 
 const DEFAULT_MEMBERS = [
   "이명원",
@@ -682,6 +683,12 @@ foodForm.addEventListener("submit", async (event) => {
 
   if (nextFoods.length === 0) {
     window.alert("음식 후보를 입력해주세요.");
+    return;
+  }
+
+  if (nextFoods.length > MAX_FOODS_PER_WINNER) {
+    window.alert(`벤픽 당첨자는 음식 후보를 최대 ${MAX_FOODS_PER_WINNER}개까지만 등록할 수 있습니다.`);
+    foodInput.focus();
     return;
   }
 
