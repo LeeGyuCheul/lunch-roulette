@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
@@ -98,6 +98,10 @@
             <canvas id="wheel" width="420" height="420" aria-label="룰렛"></canvas>
             <div class="wheel-drag-layer" id="wheelDragLayer"></div>
             <button class="wheel-center" id="spinButton" type="button" aria-label="선택한 룰렛 돌리기">GO</button>
+            <div class="winner-pop" id="winnerPop" aria-live="polite" aria-hidden="true">
+              <span id="winnerPopLabel">오늘의 선택</span>
+              <strong id="winnerPopName"></strong>
+            </div>
           </div>
 
           <section class="result-box" aria-live="polite">

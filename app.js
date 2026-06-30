@@ -74,6 +74,9 @@ const modeButtons = document.querySelectorAll(".mode-tab");
 const resetButton = document.querySelector("#resetButton");
 const wheel = document.querySelector("#wheel");
 const wheelDragLayer = document.querySelector("#wheelDragLayer");
+const winnerPop = document.querySelector("#winnerPop");
+const winnerPopLabel = document.querySelector("#winnerPopLabel");
+const winnerPopName = document.querySelector("#winnerPopName");
 const ctx = wheel.getContext("2d");
 
 let members = normalizeMembers(DEFAULT_MEMBERS);
@@ -88,6 +91,7 @@ let controlLock = null;
 let activeSpin = null;
 let lastAppliedSpinId = "";
 let currentUserName = localStorage.getItem(CURRENT_USER_STORAGE_KEY) || "";
+let winnerPopTimer = null;
 const clientId = getClientId();
 
 function getClientId() {
@@ -354,6 +358,23 @@ function renderResults() {
   vanResultEl.textContent = results.vanText;
 }
 
+function showWinnerPop(name, mode = wheelMode) {
+  window.clearTimeout(winnerPopTimer);
+  winnerPopLabel.textContent = mode === "food" ? "오늘의 음식" : "오늘의 벤 담당";
+  winnerPopName.textContent = name;
+  winnerPop.hidden = false;
+  winnerPop.setAttribute("aria-hidden", "false");
+  winnerPop.classList.remove("is-showing");
+  winnerPop.offsetHeight;
+  winnerPop.classList.add("is-showing");
+
+  winnerPopTimer = window.setTimeout(() => {
+    winnerPop.classList.remove("is-showing");
+    winnerPop.setAttribute("aria-hidden", "true");
+    winnerPop.hidden = true;
+  }, 2600);
+}
+
 function setWheelTransition(enabled, duration = SPIN_DURATION_MS) {
   const transition = enabled ? `transform ${duration}ms cubic-bezier(0.12, 0.75, 0.14, 1)` : "none";
   wheel.style.transition = transition;
@@ -550,11 +571,13 @@ async function spinCandidates(candidates, onDone) {
   wheelDragLayer.style.transform = `rotate(${currentRotation}deg)`;
 
   window.setTimeout(async () => {
-    await onDone(candidates[selectedIndex]);
+    const selected = candidates[selectedIndex];
+    await onDone(selected);
     isSpinning = false;
     activeSpin = null;
     await releaseControl();
     renderResults();
+    showWinnerPop(selected.name, wheelMode);
     spinButton.disabled = false;
     modeButtons.forEach((button) => {
       button.disabled = false;
@@ -719,6 +742,7 @@ function applyRemoteSpin(spin) {
     isSpinning = false;
     activeSpin = null;
     renderAll();
+    showWinnerPop(spin.selectedName, spin.mode);
   }, Math.max(0, spin.duration - elapsed));
 }
 

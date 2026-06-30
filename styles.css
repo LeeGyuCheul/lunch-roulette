@@ -173,21 +173,36 @@ h1 {
 }
 
 .rule-box {
-  display: grid;
-  gap: 6px;
-  border: 1px solid #d8e6de;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  border: 1px solid #e3ebe7;
   border-radius: 8px;
-  background: #f7fbf8;
-  color: #34413b;
-  font-size: 13px;
-  line-height: 1.45;
-  margin-bottom: 16px;
-  padding: 12px;
+  background: #fbfdfc;
+  color: #52615a;
+  font-size: 11px;
+  line-height: 1.35;
+  margin-bottom: 14px;
+  padding: 9px 10px;
 }
 
 .rule-box strong {
   color: var(--green);
-  font-size: 14px;
+  font-size: 12px;
+  margin-right: 2px;
+}
+
+.rule-box p {
+  position: relative;
+  padding-left: 9px;
+}
+
+.rule-box p::before {
+  position: absolute;
+  left: 0;
+  color: #9aa8a1;
+  content: "/";
 }
 
 label {
@@ -507,6 +522,46 @@ canvas {
   cursor: not-allowed;
 }
 
+.winner-pop {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  min-width: min(72%, 320px);
+  max-width: 82%;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 22px 48px rgba(23, 33, 29, 0.24);
+  opacity: 0;
+  padding: 20px 22px;
+  pointer-events: none;
+  text-align: center;
+  transform: scale(0.82) translateY(12px);
+}
+
+.winner-pop[hidden] {
+  display: none;
+}
+
+.winner-pop.is-showing {
+  animation: winner-pop 2.6s ease both;
+}
+
+.winner-pop span {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.winner-pop strong {
+  color: var(--text);
+  font-size: clamp(32px, 7vw, 56px);
+  line-height: 1.05;
+  margin-top: 5px;
+  word-break: keep-all;
+}
+
 .wheel-drag-layer {
   position: absolute;
   inset: 8%;
@@ -558,6 +613,29 @@ canvas {
 .result-box p:last-child {
   color: var(--muted);
   line-height: 1.5;
+}
+
+@keyframes winner-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.78) translateY(18px);
+  }
+
+  18% {
+    opacity: 1;
+    transform: scale(1.08) translateY(0);
+  }
+
+  30%,
+  78% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.96) translateY(-8px);
+  }
 }
 
 @media (max-width: 860px) {
