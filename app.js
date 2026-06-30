@@ -55,10 +55,12 @@ const nameInput = document.querySelector("#nameInput");
 const foodInput = document.querySelector("#foodInput");
 const excludedMembersEl = document.querySelector("#excludedMembers");
 const excludedFoodsEl = document.querySelector("#excludedFoods");
+const foodAdminListEl = document.querySelector("#foodAdminList");
 const memberCountEl = document.querySelector("#memberCount");
 const excludedCountEl = document.querySelector("#excludedCount");
 const candidateCountEl = document.querySelector("#candidateCount");
 const foodCountEl = document.querySelector("#foodCount");
+const foodAdminCountEl = document.querySelector("#foodAdminCount");
 const foodResultEl = document.querySelector("#foodResult");
 const vanResultEl = document.querySelector("#vanResult");
 const lockStatusEl = document.querySelector("#lockStatus");
@@ -230,6 +232,7 @@ function renderAll() {
   renderLockStatus();
   renderExcludedMembers();
   renderExcludedFoods();
+  renderFoodAdminList();
   renderResults();
   drawWheel();
 }
@@ -286,6 +289,32 @@ function renderExcludedFoods() {
   const excludedFoods = foods.filter((food) => food.excluded || isFoodCoolingDown(food));
   foodCountEl.textContent = `${excludedFoods.length}개`;
   excludedFoodsEl.innerHTML = renderCards(excludedFoods, "food");
+}
+
+function renderFoodAdminList() {
+  foodAdminCountEl.textContent = `${foods.length}개`;
+
+  if (foods.length === 0) {
+    foodAdminListEl.innerHTML = `<div class="empty">등록된 음식 후보가 없습니다.</div>`;
+    return;
+  }
+
+  foodAdminListEl.innerHTML = foods
+    .map((food, index) => {
+      const status = food.excluded ? "수동 제외" : isFoodCoolingDown(food) ? "자동 제외" : "후보";
+      const disabled = isLockedByOther() || isSpinning;
+
+      return `
+        <article class="admin-food-item">
+          <div>
+            <div class="member-name">${escapeHtml(food.name)}</div>
+            <div class="van-badge">${status}</div>
+          </div>
+          <button class="delete-food-button" type="button" data-index="${index}" ${disabled ? "disabled" : ""}>삭제</button>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 function renderResults() {
@@ -524,6 +553,27 @@ async function moveItem(type, index, excluded) {
   await releaseControl();
 }
 
+async function deleteFood(index) {
+  const food = foods[index];
+
+  if (!food) {
+    return;
+  }
+
+  if (!window.confirm(`${food.name} 음식을 삭제할까요? 삭제하면 룰렛 후보에서 완전히 없어집니다.`)) {
+    return;
+  }
+
+  if (!(await acquireControl())) {
+    return;
+  }
+
+  foods = foods.filter((_, foodIndex) => foodIndex !== index);
+  renderAll();
+  await persistState();
+  await releaseControl();
+}
+
 function buildStatePayload(extra = {}) {
   return {
     members,
@@ -719,6 +769,13 @@ foodForm.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  const deleteFoodButton = event.target.closest(".delete-food-button");
+
+  if (deleteFoodButton) {
+    deleteFood(Number(deleteFoodButton.dataset.index));
+    return;
+  }
+
   const button = event.target.closest(".remove-button, .toggle-button");
 
   if (!button) {

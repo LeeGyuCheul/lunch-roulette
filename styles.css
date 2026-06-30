@@ -248,6 +248,44 @@ input:focus {
   margin-top: 18px;
 }
 
+.food-admin-zone {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  margin-top: 18px;
+  padding: 12px;
+}
+
+.admin-food-list {
+  display: grid;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.admin-food-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.delete-food-button {
+  min-width: 54px;
+  min-height: 34px;
+  border-radius: 8px;
+  background: #f2e7e5;
+  color: #9b2f24;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .members {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
