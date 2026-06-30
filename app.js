@@ -550,39 +550,46 @@ function drawWheel() {
 }
 
 function renderWheelDragHandles(items) {
-  if (items.length === 0) {
-    wheelDragLayer.innerHTML = "";
-    return;
-  }
-
-  const source = wheelMode === "food" ? foods : members;
-  const slice = 360 / items.length;
-
-  wheelDragLayer.innerHTML = items
-    .map((item, position) => {
-      const index = source.indexOf(item);
-      const angle = -90 + position * slice + slice / 2;
-      const radian = (angle * Math.PI) / 180;
-      const x = 50 + Math.cos(radian) * 35;
-      const y = 50 + Math.sin(radian) * 35;
-
-      return `
-        <button
-          class="wheel-token"
-          draggable="false"
-          data-type="${wheelMode === "food" ? "food" : "member"}"
-          data-index="${index}"
-          type="button"
-          style="left: ${x}%; top: ${y}%"
-          aria-label="${escapeHtml(item.name)} 제외"
-        ></button>
-      `;
-    })
-    .join("");
+  wheelDragLayer.innerHTML = "";
 }
 
 function trimLabel(label) {
   return label.length > 8 ? `${label.slice(0, 7)}...` : label;
+}
+
+function getClickedWheelItem(event) {
+  const items = getWheelItems();
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  const rect = wheel.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const x = event.clientX - centerX;
+  const y = event.clientY - centerY;
+  const radius = Math.min(rect.width, rect.height) / 2;
+  const distance = Math.hypot(x, y);
+
+  if (distance > radius) {
+    return null;
+  }
+
+  const angle = (Math.atan2(y, x) * 180) / Math.PI;
+  const visualAngle = (angle + 360) % 360;
+  const unrotatedAngle = (visualAngle - (currentRotation % 360) + 360) % 360;
+  const sliceDeg = 360 / items.length;
+  const position = Math.floor(((unrotatedAngle + 90) % 360) / sliceDeg);
+  const source = wheelMode === "food" ? foods : members;
+  const item = items[position];
+
+  return item
+    ? {
+        type: wheelMode === "food" ? "food" : "member",
+        index: source.indexOf(item),
+      }
+    : null;
 }
 
 async function spinFood() {
@@ -975,17 +982,6 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const wheelToken = event.target.closest(".wheel-token");
-
-  if (wheelToken) {
-    if (isSpinning || isLockedByOther()) {
-      return;
-    }
-
-    moveItem(wheelToken.dataset.type, Number(wheelToken.dataset.index), true);
-    return;
-  }
-
   const button = event.target.closest(".remove-button, .toggle-button");
 
   if (!button) {
@@ -995,13 +991,27 @@ document.addEventListener("click", (event) => {
   moveItem(button.dataset.type, Number(button.dataset.index), false);
 });
 
+wheel.addEventListener("click", (event) => {
+  if (isSpinning || isLockedByOther()) {
+    return;
+  }
+
+  const clickedItem = getClickedWheelItem(event);
+
+  if (!clickedItem || clickedItem.index < 0) {
+    return;
+  }
+
+  moveItem(clickedItem.type, clickedItem.index, true);
+});
+
 document.addEventListener("dragstart", (event) => {
   if (isLockedByOther()) {
     event.preventDefault();
     return;
   }
 
-  const card = event.target.closest(".member-card, .wheel-token");
+  const card = event.target.closest(".member-card");
 
   if (!card) {
     return;
@@ -1010,7 +1020,7 @@ document.addEventListener("dragstart", (event) => {
   activeDrag = {
     type: card.dataset.type,
     index: Number(card.dataset.index),
-    fromWheel: card.classList.contains("wheel-token"),
+    fromWheel: false,
   };
   didDragMove = false;
   event.dataTransfer.setData("text/plain", JSON.stringify(activeDrag));
@@ -1019,7 +1029,7 @@ document.addEventListener("dragstart", (event) => {
 });
 
 document.addEventListener("dragend", (event) => {
-  const draggedEl = event.target.closest(".member-card, .wheel-token");
+  const draggedEl = event.target.closest(".member-card");
   draggedEl?.classList.remove("is-dragging");
   document.querySelectorAll(".drop-zone").forEach((zone) => zone.classList.remove("is-over"));
 
