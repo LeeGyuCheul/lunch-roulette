@@ -148,6 +148,30 @@ h1 {
   color: #9b2f24;
 }
 
+.user-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.admin-status {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-status.is-admin {
+  color: var(--green);
+}
+
+.is-hidden {
+  display: none !important;
+}
+
 .rule-box {
   display: grid;
   gap: 6px;

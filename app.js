@@ -24,9 +24,11 @@ const stateRef = doc(db, "lunchRoulette", "sharedState");
 const LEGACY_FOOD_STORAGE_KEY = "lunch-roulette-foods";
 const LEGACY_MEMBER_STORAGE_KEY = "lunch-roulette-members";
 const CLIENT_ID_STORAGE_KEY = "lunch-roulette-client-id";
+const CURRENT_USER_STORAGE_KEY = "lunch-roulette-current-user";
 const CONTROL_LOCK_MS = 45_000;
 const SPIN_DURATION_MS = 3_650;
 const MAX_FOODS_PER_WINNER = 3;
+const ADMIN_NAME = "이규철";
 
 const DEFAULT_MEMBERS = [
   "이명원",
@@ -53,9 +55,12 @@ const memberForm = document.querySelector("#memberForm");
 const foodForm = document.querySelector("#foodForm");
 const nameInput = document.querySelector("#nameInput");
 const foodInput = document.querySelector("#foodInput");
+const userNameSelect = document.querySelector("#userNameSelect");
+const adminStatusEl = document.querySelector("#adminStatus");
 const excludedMembersEl = document.querySelector("#excludedMembers");
 const excludedFoodsEl = document.querySelector("#excludedFoods");
 const foodAdminListEl = document.querySelector("#foodAdminList");
+const foodAdminZoneEl = document.querySelector(".food-admin-zone");
 const memberCountEl = document.querySelector("#memberCount");
 const excludedCountEl = document.querySelector("#excludedCount");
 const candidateCountEl = document.querySelector("#candidateCount");
@@ -82,6 +87,7 @@ let hasRemoteState = false;
 let controlLock = null;
 let activeSpin = null;
 let lastAppliedSpinId = "";
+let currentUserName = localStorage.getItem(CURRENT_USER_STORAGE_KEY) || "";
 const clientId = getClientId();
 
 function getClientId() {
@@ -228,6 +234,7 @@ function getWheelItems() {
 }
 
 function renderAll() {
+  renderUserControls();
   renderModeTabs();
   renderLockStatus();
   renderExcludedMembers();
@@ -243,6 +250,25 @@ function isLockedByOther() {
 
 function ownsLock() {
   return controlLock?.clientId === clientId && controlLock.expiresAt > Date.now();
+}
+
+function isAdmin() {
+  return currentUserName === ADMIN_NAME;
+}
+
+function renderUserControls() {
+  const options = ['<option value="">선택하세요</option>']
+    .concat(members.map((member) => `<option value="${escapeHtml(member.name)}">${escapeHtml(member.name)}</option>`))
+    .join("");
+
+  if (userNameSelect.innerHTML !== options) {
+    userNameSelect.innerHTML = options;
+  }
+
+  userNameSelect.value = members.some((member) => member.name === currentUserName) ? currentUserName : "";
+  adminStatusEl.textContent = isAdmin() ? "관리자 권한 활성화" : "관리자 권한 없음";
+  adminStatusEl.classList.toggle("is-admin", isAdmin());
+  foodAdminZoneEl.classList.toggle("is-hidden", !isAdmin());
 }
 
 function renderLockStatus() {
@@ -292,6 +318,12 @@ function renderExcludedFoods() {
 }
 
 function renderFoodAdminList() {
+  if (!isAdmin()) {
+    foodAdminCountEl.textContent = "관리자 전용";
+    foodAdminListEl.innerHTML = "";
+    return;
+  }
+
   foodAdminCountEl.textContent = `${foods.length}개`;
 
   if (foods.length === 0) {
@@ -554,6 +586,11 @@ async function moveItem(type, index, excluded) {
 }
 
 async function deleteFood(index) {
+  if (!isAdmin()) {
+    window.alert("관리자만 음식을 삭제할 수 있습니다.");
+    return;
+  }
+
   const food = foods[index];
 
   if (!food) {
@@ -766,6 +803,12 @@ foodForm.addEventListener("submit", async (event) => {
   await releaseControl();
   foodForm.reset();
   foodInput.focus();
+});
+
+userNameSelect.addEventListener("change", () => {
+  currentUserName = userNameSelect.value;
+  localStorage.setItem(CURRENT_USER_STORAGE_KEY, currentUserName);
+  renderAll();
 });
 
 document.addEventListener("click", (event) => {
